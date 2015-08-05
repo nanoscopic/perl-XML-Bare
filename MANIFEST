@@ -25,3 +25,4 @@ t/Pod.t
 t/UTF8_Values.t
 t/UTF8_Attributes.t
 t/test.xml
+META.json                                Module JSON meta-data (added by MakeMaker)

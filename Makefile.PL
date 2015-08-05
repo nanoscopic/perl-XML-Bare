@@ -1,14 +1,31 @@
 #!/usr/bin/perl
 use ExtUtils::MakeMaker;
 require 5.006;
-my @basics = ( AUTHOR       => 'David Helkowski <cpan@codechild.com>',
-               ABSTRACT     => 'A minimal XML parser / schema checker / pretty-printer using C internally.',
-               NAME         => 'XML::Bare',
-               VERSION_FROM => 'Bare.pm',
-               PREREQ_PM    => { Carp => 0, Exporter => 0, DynaLoader => 0 },
-               XSOPT        => '-nolinenumbers', # line number defines were causing issues on some platforms
-               #OPTIMIZE     => '-O3 -msse2 -march=pentium4 --omit-frame-pointer',
-             );
+my @basics = ( 
+    AUTHOR       => 'David Helkowski <cpan@codechild.com>',
+    ABSTRACT     => 'A minimal XML parser / schema checker / pretty-printer using C internally.',
+    NAME         => 'XML::Bare',
+    VERSION_FROM => 'Bare.pm',
+    XSOPT        => '-nolinenumbers', # line number defines were causing issues on some platforms
+    BUILD_REQUIRES => {
+        'Data::Dumper' => 0,
+        'English' => 0,
+        'File::Find' => 0,
+        'File::Temp' => 0,
+        'Scalar::Util' => 0,
+        'Test::Harness' => 0,
+        'Test::More' => '0.94'
+    },
+    CONFIGURE_REQUIRES => {
+        'ExtUtils::MakeMaker' => '6.30'
+    },
+    PREREQ_PM => {
+        Carp => 0,
+        DynaLoader => 0,
+        Exporter => 0
+    },
+);
+
 my $cc = getcc();
 if( $cc ) {
   push( @basics, CC => $cc );

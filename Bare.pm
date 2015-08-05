@@ -9,7 +9,7 @@ require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
 
 
-$VERSION = "0.45";
+$VERSION = "0.48";
 
 
 use vars qw($VERSION *AUTOLOAD);
@@ -28,7 +28,7 @@ XML::Bare - Minimal XML parser implemented via a C state engine
 
 =head1 VERSION
 
-0.45
+0.48
 
 =cut
 
@@ -37,7 +37,8 @@ sub new {
   my $self  = { @_ };
   
   if( $self->{ 'text' } ) {
-    XML::Bare::c_parse( $self->{'text'} );
+    my $root = XML::Bare::c_parse( $self->{'text'} );
+    $self->{'root'} = $self->{'curnode'} = $root;
   }
   else {
     my $res = open( XML, $self->{ 'file' } );
@@ -50,7 +51,8 @@ sub new {
       $self->{'text'} = <XML>;
     }
     close( XML );
-    XML::Bare::c_parse( $self->{'text'} );
+    my ( $root, $curnode ) = XML::Bare::c_parse( $self->{'text'} );
+    $self->{'root'} = $self->{'curnode'} = $root;
   }
   bless $self, $class;
   return $self if( !wantarray );
@@ -142,8 +144,7 @@ sub tohtml {
 sub parse {
   my $self = shift;
   
-  my $res = XML::Bare::xml2obj();
-  $self->{'structroot'} = XML::Bare::get_root();
+  my $res = XML::Bare::xml2obj( $self->{'root'}, $self->{'curnode'} );
   $self->free_tree();
   
   if( defined( $self->{'scheme'} ) ) {
@@ -357,8 +358,7 @@ sub readxbs { # xbs = xml bare schema
 sub simple {
   my $self = shift;
   
-  my $res = XML::Bare::xml2obj_simple();#$self->xml2obj();
-  $self->{'structroot'} = XML::Bare::get_root();
+  my $res = XML::Bare::xml2obj_simple( $self->{'root'}, $self->{'curnode'} );#$self->xml2obj();
   $self->free_tree();
   
   if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
@@ -779,7 +779,7 @@ sub obj2html {
   return '';
 }
 
-sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'structroot'} ); }
+sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'root'} ); }
 
 1;
 
