@@ -51,8 +51,17 @@ struct attc {
 struct attc* new_attc( struct nodec *newparent );
 
 struct parserc {
-  struct nodec *pcurnode;
-  struct attc  *curatt;
+    struct nodec *curnode;
+    struct attc  *curatt;
+    struct nodec *rootnode;
+    int err;
+    char  *tagname; int tagname_len;
+    char  *attname; int attname_len;
+    char  *attval;  int attval_len;
+    int    att_has_val;
+    int    last_state;
+    char *rootpos;
 };
 
-struct nodec* parserc_parse( struct parserc *self, char *newbuf );
+int parserc_parse( struct parserc *self, char *newbuf );
+int parserc_parse_unsafely( struct parserc *self, char *newbuf );

@@ -3,13 +3,21 @@ Native Perl Tree Parsers
 
 #0
 require XML::Bare;
-my $ob = new XML::Bare( file => $file );
-$root = $ob->parse();
+my $ob = new XML::Bare( file => $file, unsafe => 1 );
+$root = $ob->simple();
 
 #- XML::Bare (simple)
 require XML::Bare;
 my $ob = new XML::Bare( file => $file );
 my $root = $ob->simple();
+
+#- XML::Fast
+require XML::Fast;
+$/ = undef;
+open( FILE, $file );
+my $text = <FILE>;
+close( FILE );
+my $hash = XML::Fast::xml2hash( $text );
 
 #-
 require XML::TreePP;
@@ -100,3 +108,7 @@ my $ob = XML::MyXML::xml_to_object( $file, { file => 1 } );
 require XML::TinyXML;
 my $ob = XML::TinyXML->new();
 $ob->loadFile( $file );
+
+#-
+require XML::LibXML::Simple;
+my $ref = XML::LibXML::Simple::XMLin($file);

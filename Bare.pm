@@ -7,7 +7,7 @@ use utf8;
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
-$VERSION = "0.50";
+$VERSION = "0.51";
 use vars qw($VERSION *AUTOLOAD);
 
 *AUTOLOAD = \&XML::Bare::AUTOLOAD;
@@ -22,7 +22,7 @@ XML::Bare - Minimal XML parser implemented via a C state engine
 
 =head1 VERSION
 
-0.50
+0.51
 
 =cut
 
@@ -30,23 +30,27 @@ sub new {
   my $class = shift; 
   my $self  = { @_ };
   
+  $self->{'i'} = 0;
   if( $self->{ 'text' } ) {
-    my $root = XML::Bare::c_parse( $self->{'text'} );
-    $self->{'root'} = $self->{'curnode'} = $root;
+    if( $self->{'unsafe'} ) {
+        $self->{'parser'} = XML::Bare::c_parse_unsafely( $self->{'text'} );
+    }
+    else {
+        $self->{'parser'} = XML::Bare::c_parse( $self->{'text'} );
+    }
   }
   else {
-    my $res = open( XML, $self->{ 'file' } );
+    my $res = open( my $XML, $self->{ 'file' } );
     if( !$res ) {
       $self->{ 'xml' } = 0;
       return 0;
     }
     {
       local $/ = undef;
-      $self->{'text'} = <XML>;
+      $self->{'text'} = <$XML>;
     }
-    close( XML );
-    my $root = XML::Bare::c_parse( $self->{'text'} );
-    $self->{'root'} = $self->{'curnode'} = $root;
+    close( $XML );
+    $self->{'parser'} = XML::Bare::c_parse( $self->{'text'} );
   }
   bless $self, 'XML::Bare::Object';
   return $self if( !wantarray );
@@ -69,14 +73,23 @@ sub find_node { shift; return XML::Bare::find_node( @_ ); }
 sub DESTROY {
   my $self = shift;
   undef $self->{'xml'};
+  $self->free_tree();
+}
+
+sub read_more {
+    my $self = shift;
+    my %p = ( @_ );
+    my $i = $self->{'i'}++;
+    if( $p{'text'} ) {
+        $self->{"text$i"} = $p{'text'};
+        XML::Bare::c_parse_more( $self->{"text$i"}, $self->{'parser'} );
+    }
 }
 
 sub parse {
   my $self = shift;
   
-  my $res = XML::Bare::xml2obj( $self->{'root'}, $self->{'curnode'} );
-  
-  $self->free_tree();
+  my $res = XML::Bare::xml2obj( $self->{'parser'} );
   
   if( defined( $self->{'scheme'} ) ) {
     $self->{'xbs'} = new XML::Bare( %{ $self->{'scheme'} } );
@@ -184,8 +197,7 @@ sub checkone {
 sub simple {
   my $self = shift;
   
-  my $res = XML::Bare::xml2obj_simple( $self->{'root'}, $self->{'curnode'} );#$self->xml2obj();
-  $self->free_tree();
+  my $res = XML::Bare::xml2obj_simple( $self->{'parser'} );#$self->xml2obj();
   
   if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
   $self->{ 'xml' } = $res;
@@ -291,21 +303,21 @@ sub save {
   }
   return if( !$len );
   
-  open  F, '>:utf8', $self->{ 'file' };
-  print F $xml;
+  open( my $F, '>:utf8', $self->{ 'file' } );
+  print $F $xml;
   
-  seek( F, 0, 2 );
-  my $cursize = tell( F );
+  seek( $F, 0, 2 );
+  my $cursize = tell( $F );
   if( $cursize != $len ) { # concurrency; we are writing a smaller file
     warn "Truncating File $self->{'file'}";
     truncate( F, $len );
   }
-  seek( F, 0, 2 );
-  $cursize = tell( F );
+  seek( $F, 0, 2 );
+  $cursize = tell( $F );
   if( $cursize != $len ) { # still not the right size even after truncate??
     die "Write problem; $cursize != $len";
   }
-  close F;
+  close $F;
 }
 
 sub xml {
@@ -359,7 +371,7 @@ sub lineinfo {
   return "line $line char $res \"$part\"";
 }
 
-sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'root'} ); }
+sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'parser'} ); }
 
 package XML::Bare;
 
@@ -1034,7 +1046,7 @@ immediate values when a node contains no subnodes.
 
 =item * Unknown C<< <! >> sections are parsed, but discarded
 
-=item * Attributes may use no quotes, single quotes, quotes
+=item * Attributes may use no quotes, single quotes, quotes, or backtics
 
 =item * Quoted attributes cannot contain escaped quotes
 
@@ -1061,6 +1073,29 @@ equal to the first continuous string of text besides a subnode.
     <subnode/>text
   </node>
   ( the value of node is "\n  " )
+  
+=item * Entities are not parsed
+
+No entity parsing is done. This is intentional. Future versions of the module
+may include a feature to automatically parse entities, but by default any such
+feature will be disabled in order to keep from slowing down the parser.
+
+Also, this is done so that round trip ( read and then write back out ) behavior
+is consistent.
+
+=item * Nodes named value
+
+Previously iterations of this module had problems with nodes named 'value',
+due to the fact that node contents are stored under the 'value' key already.
+The current version should parse such files without any problem, although it
+may be confusing to see a parsed tree with 'value' pointing to another hash
+containing 'value' as well.
+
+In a future version of the module it will be possible to alter the name that
+values are stored under.
+
+Note that node values are stored under the key 'content' when the "simple"
+parsing mode is used, so as to be consistent with XML::Simple.
 
 =back
 
@@ -1068,20 +1103,20 @@ equal to the first continuous string of text besides a subnode.
 
 =over 2
 
-=item * C<< $ob = new XML::Bare( text => "[some xml]" ) >>
+=item * C<< $ob = XML::Bare->new( text => "[some xml]" ) >>
 
 Create a new XML object, with the given text as the xml source.
 
-=item * C<< $object = new XML::Bare( file => "[filename]" ) >>
+=item * C<< $object = XML::Bare->new( file => "[filename]" ) >>
 
 Create a new XML object, with the given filename/path as the xml source
 
-=item * C<< $object = new XML::Bare( text => "[some xml]", file => "[filename]" ) >>
+=item * C<< $object = XML::Bare->new( text => "[some xml]", file => "[filename]" ) >>
 
 Create a new XML object, with the given text as the xml input, and the given
 filename/path as the potential output ( used by save() )
 
-=item * C<< $object = new XML::Bare( file => "data.xml", scheme => { file => "scheme.xbs" } ) >>
+=item * C<< $object = XML::Bare->new( file => "data.xml", scheme => { file => "scheme.xbs" } ) >>
 
 Create a new XML object and check to ensure it is valid xml by way of the XBS scheme.
 
@@ -1121,7 +1156,7 @@ html. [root node name] is optional.
 =item * C<< $object->save() >>
 
 The the current tree in the object, cleanly indent it, and save it
-to the file paramter specified when creating the object.
+to the file parameter specified when creating the object.
 
 =item * C<< $value = xval $node, $default >>
 
@@ -1334,6 +1369,49 @@ Take a node with children that have immediate values and
 creates a hashref to reference those values by the name of
 each child.
 
+=item * C<< XML::Bare->new( text => "[xml]", unsafe => 1 ) >>
+
+An extra speedy way to parse XML. It is unsafe; may harm pets and children. Don't
+say you weren't warned. 30% speed boost compared to the normal parsing. You -must-
+use $ob->simple() in combination with this for it to work properly.
+
+The speed boost is gained by skipping checks for the end of the string when in the
+middle of properly formatted XML. The only time the check is done is within "values"
+( which includes the space after the final closing </xml> )
+
+Also, in the unsafe mode, tags, complete with their attributes, must be on one line.
+Node contents of course, can still have carriage returns...
+
+=item * C<< $object->read_more( text => "[xml fragment]" ) >>
+
+Add more XML text to be handled. Note that this function must be called before
+calling the parse function.
+
+Example:
+
+  Code:
+    my $ob = XML::Bare->new( text => "
+      <xml>
+        <node>a</node>" );
+    $ob->read_more( text => "<node>b</node>" );
+    $ob->read_more( text => "</xml>" );
+    my $root = $ob->parse();
+    print $ob->xml( $root );
+  
+  Output:
+    <xml>
+      <node>a</node>
+      <node>b</node>
+    </xml>
+
+Warning! Reading in additional XML fragments only works properly at proper "division points".
+Currently the parser will -not- work properly if you split in the middle of a node value, or
+in the middle of a node name. A future version of the module will be properly updated to handle
+these cases.
+
+Currently there is little to no benefit to parsing this way, rather than simple concatenating
+the two strings together and then reading all the XML in at once.
+
 =back
 
 =head2 Functions Used Internally
@@ -1342,11 +1420,41 @@ each child.
 
 =item * C<< check() checkone() readxbs() free_tree_c() >>
 
-=item * C<< lineinfo() c_parse() c_parsefile() free_tree() xml2obj() >>
+=item * C<< lineinfo() c_parse() c_parse_unsafely() c_parse_more() c_parsefile() free_tree() xml2obj() >>
 
 =item * C<< obj2xml() get_root() obj2html() xml2obj_simple() >>
 
 =back
+
+=head2 Controversy
+
+Since the creation of this module there has been a fair amount of controvesy surrounding
+it. A number of authors of other XML parsers have gone so far as to publicly attack this
+module and claim that it 'does not parse XML', and 'it is not XML compliant'. Some of the
+same people seem to be angered by the inclusion of a benchmark, claiming that it is an
+unfair comparison, and that if the proper options and setup are used, that other XML
+parsers are better.
+
+The module should parse any XML document that conforms to the standardized
+XML specifications, there is no need for alarm and fear that the module will corrupt
+your XML documents on reading.
+
+To be blunt about how the parser works, very little has been done to make the parser
+follow the specification known as 'XML'. The parser is meant to be flexibile and somewhat
+resilient, and will parse XML like garbage that would cause other parsers to error out.
+
+As far as I am concerned, as the author of the module, the 'XML' in 'XML::Bare' should
+be thought of to mean 'eXtremely Mad Language', because the module was written from
+scratch without referring to the specification known as 'XML'.
+
+In regard to the complaints about the unfairness of the included benchmarks, please
+make your own intelligent decision as to what module you like by trying multiple
+modules and/or running the performance tests yourself. If you like some other module,
+use that module. If you like XML::Bare and think it is the fastest thing on the planet,
+that is cool too.
+
+If you hate XML::Bare and want to go around on the internet trashing it and telling
+people to use something else, I think perhaps you may want to seek counseling.
 
 =head2 Performance
 
@@ -1364,27 +1472,29 @@ that do not generated trees ( notree.tmpl ).
 
 A full list of modules currently tested against is as follows:
 
-  Tiny XML (exe)
   EzXML (exe)
+  Tiny XML (exe)
+  XML::Descent (notree)
+  XML::DOM
+  XML::Fast
+  XML::Grove::Builder
+  XML::Handler::Trees
   XMLIO (exe)
   XML::LibXML (notree)
+  XML::LibXML::Simple
   XML::Parser (notree)
-  XML::Parser::Expat (notree)
-  XML::Descent (notree)
   XML::Parser::EasyTree
-  XML::Handler::Trees
-  XML::Twig
-  XML::Smart
+  XML::Parser::Expat (notree)
+  XML::SAX::Simple
   XML::Simple using XML::Parser
   XML::Simple using XML::SAX::PurePerl
   XML::Simple using XML::LibXML::SAX::Parser
   XML::Simple using XML::Bare::SAX::Parser
+  XML::Smart
+  XML::Twig
   XML::TreePP
   XML::Trivial
-  XML::SAX::Simple
-  XML::Grove::Builder
   XML::XPath::XMLParser
-  XML::DOM
 
 To run the comparisons, run the appropriate perl file within the
 bench directory. ( exe.pl, tree.pl, or notree.pl )
@@ -1424,19 +1534,26 @@ using the included feed2.xml:
 
   -Module-                   load     parse    total
   XML::Bare                  1        1        1
-  XML::TreePP                2.3068   23.7554  7.6921
-  XML::Parser::EasyTree      4.8799   25.3691  9.6257
+  XML::Bare (simple)         1        0.7238   ?
+  XML::Bare (unsafe simple)  1       ~0.5538   ?
+  XML::Fast                  1.516    0.9733   1.4783
+  XML::TreePP                0.6393   30.5951  2.6874
+  XML::MyXML                 1.8266   14.2571  2.7113 
+  XML::Parser::EasyTree      1.5208   22.8283  2.9748 
+  XML::Trivial               2.007    25.742   3.615  
+  XML::Tiny                  0.1665   61.4918  4.3234  
+  XML::XPath::XMLParser      2.5762   33.2567  4.6742  
+  XML::Smart                 1.702    59.4907  5.7566
+  XML::Simple (XML::Parser)  0.5838   64.7243  5.0006  
+  XML::DOM::Lite             4.5207   17.4617  5.4033
+  XML::Simple (LibXML)       0.5904   161.7544 11.5731
+  XML::Twig                  8.553    56.9034  11.8805 
+  XML::Grove::Builder        7.2021   30.7926  12.9334
   XML::Handler::Trees        6.8545   33.1007  13.0575
-  XML::Trivial               5.0105   32.0043  11.4113
-  XML::Simple (XML::Parser)  2.3498   41.9007  12.3062
-  XML::Simple (PurePerl)     2.3551   224.3027 51.7832
-  XML::Simple (LibXML)       2.3617   88.8741  23.215
-  XML::Simple (XML::Bare)    2.4319   37.7355  10.2343
+  XML::LibXML::Simple        14.0204  11.8482  13.8707
+  XML::Simple (PurePerl)     0.6176   321.3422 23.0465 
   XML::Simple                2.7168   90.7203  26.7525
   XML::SAX::Simple           8.7386   94.8276  29.2166
-  XML::Twig                  28.3206  48.1014  33.1222
-  XML::Grove::Builder        7.2021   30.7926  12.9334
-  XML::XPath::XMLParser      9.6869   43.5032  17.4941
   XML::LibXML (notree)       11.0023  5.022    10.5214
   XML::Parser (notree)       4.3748   25.0213  5.9803
   XML::Parser::Expat(notree) 3.6555   51.6426  7.4316
@@ -1456,6 +1573,9 @@ The following things are shown as well:
   - XML::Bare can parse XML and create a tree
   in less time than all three binary parsers take
   just to parse.
+  - XML::Fast is theoretically faster at parsing than
+  the default 'full' mode of XML::Bare. Despite that,
+  the 'simple' mode of XML::Bare is even faster.
 
 Note that the executable parsers are not perl modules
 and are timed using dummy programs that just uses the
