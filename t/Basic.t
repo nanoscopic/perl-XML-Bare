@@ -38,13 +38,6 @@ is( $simple->{node}[1], 'b', 'simple - multiple node array creation' );
 is( $root->{xml}->{node}->[0]->{value}, 'a', 'use of multi_' );
 is( $simple->{node}[0], 'a', 'simple - use of multi_' );
 
-( $xml, $root ) = new XML::Bare( text => "<xml><multi_file/><file><name>a</name></file></xml>" );
-#die Dumper( $root );
-is( $root->{xml}->{file}->[0]->{'name'}->{value}, 'a', 'complex of multi_' );
-
-( $xml, $root ) = new XML::Bare( text => "<xml><file><name>a</name></file><multi_file/></xml>" );
-is( $root->{xml}->{file}->[0]->{'name'}->{value}, 'a', 'complex rev of multi_' );
-
 # note output of this does not work
 ( $xml, $root ) = new XML::Bare( text => "<xml><node>val<a/></node></xml>" );
 is( $root->{xml}->{node}->{value}, 'val', 'basic mixed - value before' );
@@ -56,6 +49,12 @@ is( $root->{xml}->{node}->{value}, 'val', 'basic mixed - value after' );
 
 ( $xml, $root, $simple ) = reparse( "<xml><!--test--></xml>",1  );
 is( $root->{xml}->{comment}, 'test', 'loading a comment' );
+
+# test node addition
+( $xml, $root ) = new XML::Bare( text => "<xml></xml>" );
+$xml->add_node( $root, 'item', name => 'bob' );
+is( ref( $root->{'item'}[0]{'name'} ), 'HASH', 'node addition' );
+is( $root->{'item'}[0]{'name'}{'value'}, 'bob', 'node addition' );
 
 # test cyclic equalities
 cyclic( "<xml><b><!--test--></b><c/><c/></xml>", 'comment' );

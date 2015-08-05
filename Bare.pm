@@ -8,7 +8,7 @@ require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
 
 
-$VERSION = "0.42";
+$VERSION = "0.43";
 
 
 use vars qw($VERSION *AUTOLOAD);
@@ -372,7 +372,7 @@ sub add_node {
   my %blank;
   $node->{ 'multi_'.$name } = \%blank if( ! $node->{ 'multi_'.$name } );
   $node->{ $name } = \@newar if( ! $node->{ $name } );
-  my $newnode = { splice( @_, 3 ) };#new_node( 0, splice( @_, 3 ) );
+  my $newnode = new_node( 0, splice( @_, 3 ) );
   push( @{ $node->{ $name } }, $newnode );
   return $newnode;
 }
