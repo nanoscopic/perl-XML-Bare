@@ -1,5 +1,12 @@
 XML::Bare Changelog
 
+0.53 ( 7-12-13 )
+  - Remove executable permissions from files that shouldn't have them.
+  - Added shebang to main Bare.pm file ( apparently some people want this )
+  - Correct line endings to unix style on parser.c
+  - Improved simplify function that works properly with trees instead of just a single level
+  - Added hash2xml to quickly convert recursing hashes into XML
+
 0.52 ( 4-29-13 )
   - Added proper binmode setting when outputting XML to address deficiences on Win32 ( such as failing Strawberry perl due to line endings )
   - Added evil OS check in file writing code to address differences in how files must be opened to write utf8 on win32 versus linux/cygwin.
