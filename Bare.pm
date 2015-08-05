@@ -7,7 +7,7 @@ use utf8;
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
-$VERSION = "0.49";
+$VERSION = "0.50";
 use vars qw($VERSION *AUTOLOAD);
 
 *AUTOLOAD = \&XML::Bare::AUTOLOAD;
@@ -22,7 +22,7 @@ XML::Bare - Minimal XML parser implemented via a C state engine
 
 =head1 VERSION
 
-0.48
+0.50
 
 =cut
 
@@ -50,7 +50,6 @@ sub new {
   }
   bless $self, 'XML::Bare::Object';
   return $self if( !wantarray );
-  print "Parsing automatically\n";
   return ( $self, ( $self->{'simple'} ? $self->simple() : $self->parse() ) );
 }
 
@@ -69,18 +68,14 @@ sub find_node { shift; return XML::Bare::find_node( @_ ); }
 
 sub DESTROY {
   my $self = shift;
-  print "Destroy called\n";
   undef $self->{'xml'};
 }
 
 sub parse {
   my $self = shift;
   
-  print "Parsing\n";
-  
   my $res = XML::Bare::xml2obj( $self->{'root'}, $self->{'curnode'} );
   
-  print "Attempting to free\n";
   $self->free_tree();
   
   if( defined( $self->{'scheme'} ) ) {

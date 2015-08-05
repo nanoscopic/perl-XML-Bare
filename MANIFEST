@@ -25,4 +25,9 @@ t/Pod.t
 t/UTF8_Values.t
 t/UTF8_Attributes.t
 t/test.xml
+t/Bug_node_named_value.t
+t/Bug_simple_empty_is_one.t
+t/Bug_simple_with_cdata.t
+t/Func_find_by_perl.t
+t/Func_find_node.t
 META.json                                Module JSON meta-data (added by MakeMaker)

@@ -27,4 +27,4 @@ requires:
   Carp: 0
   DynaLoader: 0
   Exporter: 0
-version: 0.49
+version: 0.50
