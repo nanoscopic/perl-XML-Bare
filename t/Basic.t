@@ -16,7 +16,7 @@ is( $simple->{node}, 'val', 'simple - normal node value reading' );
 
 ( $xml, $root, $simple ) = reparse( "<xml><node/></xml>" );
 is( ref( $root->{xml}->{node} ), 'HASH', 'existence of blank node' );
-is( $simple->{node}, 1, 'simple - existence of blank node' );
+is( $simple->{node}, '', 'simple - existence of blank node' );
 
 ( $xml, $root, $simple ) = reparse( "<xml><node att=12>val</node></xml>" );
 is( $root->{xml}->{node}->{att}->{value}, '12', 'reading of attribute value' );
@@ -26,6 +26,10 @@ is( $simple->{node}{att}, '12', 'simple - reading of attribute value' );
 is( $root->{xml}->{node}->{att}->{value}, '12', 'reading of " surrounded attribute value' );
 is( $simple->{node}{att}, '12', 'simple - reading of " surrounded attribute value' );
 
+( $xml, $root, $simple ) = reparse( "<xml><node att>val</node></xml>" );
+is( $root->{xml}{node}{att}{value}, '1', "reading of value of standalone attribute" );
+is( $simple->{node}{att}, '1', "simple - reading of value of standalone attribute" );
+    
 ( $xml, $root, $simple ) = reparse( "<xml><node><![CDATA[<cval>]]></node></xml>" );
 is( $root->{xml}->{node}->{value}, '<cval>', 'reading of cdata' );
 is( $simple->{node}, '<cval>', 'simple - reading of cdata' );

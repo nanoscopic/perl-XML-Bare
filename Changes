@@ -1,6 +1,19 @@
 XML::Bare Changelog
 
-0.48 ( 4-23-13 )
+0.49 ( 4-23-13 )
+  - Fixes to find_by_perl
+    Can now be accessed in an object or namespace flexibly.
+    Now ignores case of keys.
+    Keys with underscores can be used.
+    Will work properly when passed a single node instead of an array reference of nodes.
+  - Fixes to xget
+    Method of deferencing has been changed to be compatible with newer versions of perl ( 5.10.2+ )
+  - Fixed handling of nodes named 'value'; they will no longer crash the XS code
+  - Added a new function similar to new called 'simple', that works in the same way but automatically uses the 'simple' parser
+  - Altered handling of node values in simple mode, so that it stores values when mixed with nodes or atttributes under 'content' ( like XML::Simple )
+    This feature was requested by users so it has been added. Note that it only does this when the value is not composed of just spaces and carriage returns.
+
+0.48 ( 4-22-13 )
   - Revert code back to 0.45 version
     Changes lost in the process:
       Content is not stored in the 'content' key any more; it is stored as the node itself when the node contains nothing else. As God intended.

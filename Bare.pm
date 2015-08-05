@@ -7,17 +7,11 @@ use utf8;
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
-
-
-$VERSION = "0.48";
-
-
+$VERSION = "0.49";
 use vars qw($VERSION *AUTOLOAD);
 
 *AUTOLOAD = \&XML::Bare::AUTOLOAD;
 bootstrap XML::Bare $VERSION;
-
-
 
 @EXPORT = qw( );
 @EXPORT_OK = qw( xget merge clean add_node del_node find_node del_node forcearray del_by_perl xmlin xval );
@@ -51,100 +45,42 @@ sub new {
       $self->{'text'} = <XML>;
     }
     close( XML );
-    my ( $root, $curnode ) = XML::Bare::c_parse( $self->{'text'} );
+    my $root = XML::Bare::c_parse( $self->{'text'} );
     $self->{'root'} = $self->{'curnode'} = $root;
   }
-  bless $self, $class;
+  bless $self, 'XML::Bare::Object';
   return $self if( !wantarray );
-  return ( $self, $self->parse() );
+  print "Parsing automatically\n";
+  return ( $self, ( $self->{'simple'} ? $self->simple() : $self->parse() ) );
 }
+
+sub simple {
+    return new( @_, simple => 1 );
+}
+
+package XML::Bare::Object;
+
+use Carp;
+use strict;
+
+# Stubs ( to allow these functions to be used via an object as well, not just via import or namespace )
+sub find_by_perl { shift; return XML::Bare::find_by_perl( @_ ); }
+sub find_node { shift; return XML::Bare::find_node( @_ ); }
 
 sub DESTROY {
   my $self = shift;
+  print "Destroy called\n";
   undef $self->{'xml'};
 }
 
-sub xget {
-  my $hash = shift;
-  return map $_->{'value'}, @{%$hash}{@_};
-}
-
-sub forcearray {
-  my $ref = shift;
-  return [] if( !$ref );
-  return $ref if( ref( $ref ) eq 'ARRAY' );
-  return [ $ref ];
-}
-
-sub merge {
-  # shift in the two array references as well as the field to merge on
-  my ( $a, $b, $id ) = @_;
-  my %hash = map { $_->{ $id } ? ( $_->{ $id }->{ 'value' } => $_ ) : ( 0 => 0 ) } @$a;
-  for my $one ( @$b ) {
-    next if( !$one->{ $id } );
-    my $short = $hash{ $one->{ $id }->{ 'value' } };
-    next if( !$short );
-    foreach my $key ( keys %$one ) {
-      next if( $key eq '_pos' || $key eq 'id' );
-      my $cur = $short->{ $key };
-      my $add = $one->{ $key };
-      if( !$cur ) { $short->{ $key } = $add; }
-      else {
-        my $type = ref( $cur );
-        if( $type eq 'HASH' ) {
-          my @arr;
-          $short->{ $key } = \@arr;
-          push( @arr, $cur );
-        }
-        if( ref( $add ) eq 'HASH' ) {
-          push( @{$short->{ $key }}, $add );
-        }
-        else { # we are merging an array
-          push( @{$short->{ $key }}, @$add );
-        }
-      }
-      # we need to deal with the case where this node
-      # is already there, either alone or as an array
-    }
-  }
-  return $a;  
-}
-
-sub clean {
-  my $ob = new XML::Bare( @_ );
-  my $root = $ob->parse();
-  if( $ob->{'save'} ) {
-    $ob->{'file'} = $ob->{'save'} if( "$ob->{'save'}" ne "1" );
-    $ob->save();
-    return;
-  }
-  return $ob->xml( $root );
-}
-
-sub xmlin {
-  my $text = shift;
-  my %ops = ( @_ );
-  my $ob = new XML::Bare( text => $text );
-  my $simple = $ob->simple();
-  if( !$ops{'keeproot'} ) {
-    my @keys = keys %$simple;
-    my $first = $keys[0];
-    $simple = $simple->{ $first } if( $first );
-  }
-  return $simple;
-}
-
-sub tohtml {
-  my %ops = ( @_ );
-  my $ob = new XML::Bare( %ops );
-  return $ob->html( $ob->parse(), $ops{'root'} || 'xml' );
-}
-
-# Load a file using XML::DOM, convert it to a hash, and return the hash
 sub parse {
   my $self = shift;
   
+  print "Parsing\n";
+  
   my $res = XML::Bare::xml2obj( $self->{'root'}, $self->{'curnode'} );
+  
+  print "Attempting to free\n";
   $self->free_tree();
   
   if( defined( $self->{'scheme'} ) ) {
@@ -167,29 +103,6 @@ sub parse {
   }
   
   return $self->{ 'xml' };
-}
-
-sub lineinfo {
-  my $self = shift;
-  my $res  = shift;
-  my $line = 1;
-  my $j = 0;
-  for( my $i=0;$i<$res;$i++ ) {
-    my $let = substr( $self->{'text'}, $i, 1 );
-    if( ord($let) == 10 ) {
-      $line++;
-      $j = $i;
-    }
-  }
-  my $part = substr( $self->{'text'}, $res, 10 );
-  $part =~ s/\n//g;
-  $res -= $j;
-  if( $self->{'offset'} ) {
-    my $off = $self->{'offset'};
-    $line += $off;
-    return "$off line $line char $res \"$part\"";
-  }
-  return "line $line char $res \"$part\"";
 }
 
 # xml bare schema
@@ -273,6 +186,285 @@ sub checkone {
   return 0;
 }
 
+sub simple {
+  my $self = shift;
+  
+  my $res = XML::Bare::xml2obj_simple( $self->{'root'}, $self->{'curnode'} );#$self->xml2obj();
+  $self->free_tree();
+  
+  if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
+  $self->{ 'xml' } = $res;
+  
+  return $self->{ 'xml' };
+}
+
+sub add_node {
+  my ( $self, $node, $name ) = @_;
+  my @newar;
+  my %blank;
+  $node->{ 'multi_'.$name } = \%blank if( ! $node->{ 'multi_'.$name } );
+  $node->{ $name } = \@newar if( ! $node->{ $name } );
+  my $newnode = new_node( 0, splice( @_, 3 ) );
+  push( @{ $node->{ $name } }, $newnode );
+  return $newnode;
+}
+
+sub add_node_after {
+  my ( $self, $node, $prev, $name ) = @_;
+  my @newar;
+  my %blank;
+  $node->{ 'multi_'.$name } = \%blank if( ! $node->{ 'multi_'.$name } );
+  $node->{ $name } = \@newar if( ! $node->{ $name } );
+  my $newnode = $self->new_node( splice( @_, 4 ) );
+  
+  my $cur = 0;
+  for my $anode ( @{ $node->{ $name } } ) {
+    $anode->{'_pos'} = $cur if( !$anode->{'_pos'} );
+    $cur++;
+  }
+  my $opos = $prev->{'_pos'};
+  for my $anode ( @{ $node->{ $name } } ) {
+    $anode->{'_pos'}++ if( $anode->{'_pos'} > $opos );
+  }
+  $newnode->{'_pos'} = $opos + 1;
+  
+  push( @{ $node->{ $name } }, $newnode );
+  
+  return $newnode;
+}
+
+sub del_node {
+  my $self = shift;
+  my $node = shift;
+  my $name = shift;
+  my %match = @_;
+  $node = $node->{ $name };
+  return if( !$node );
+  for( my $i = 0; $i <= $#$node; $i++ ) {
+    my $one = $node->[ $i ];
+    foreach my $key ( keys %match ) {
+      my $val = $match{ $key };
+      if( $one->{ $key }->{'value'} eq $val ) {
+        delete $node->[ $i ];
+      }
+    }
+  }
+}
+
+# Created a node of XML hash with the passed in variables already set
+sub new_node {
+  my $self  = shift;
+  my %parts = @_;
+  
+  my %newnode;
+  foreach( keys %parts ) {
+    my $val = $parts{$_};
+    if( m/^_/ || ref( $val ) eq 'HASH' ) {
+      $newnode{ $_ } = $val;
+    }
+    else {
+      $newnode{ $_ } = { value => $val };
+    }
+  }
+  
+  return \%newnode;
+}
+
+sub simplify {
+  my $self = shift;
+  my $root = shift;
+  my %ret;
+  foreach my $name ( keys %$root ) {
+    next if( $name =~ m|^_| || $name eq 'comment' || $name eq 'value' );
+    my $val = xval $root->{$name};
+    $ret{ $name } = $val;
+  }
+  return \%ret;
+}
+
+# Save an XML hash tree into a file
+sub save {
+  my $self = shift;
+  return if( ! $self->{ 'xml' } );
+  
+  my $xml = $self->xml( $self->{'xml'} );
+  
+  my $len;
+  {
+    use bytes;  
+    $len = length( $xml );
+  }
+  return if( !$len );
+  
+  open  F, '>:utf8', $self->{ 'file' };
+  print F $xml;
+  
+  seek( F, 0, 2 );
+  my $cursize = tell( F );
+  if( $cursize != $len ) { # concurrency; we are writing a smaller file
+    warn "Truncating File $self->{'file'}";
+    truncate( F, $len );
+  }
+  seek( F, 0, 2 );
+  $cursize = tell( F );
+  if( $cursize != $len ) { # still not the right size even after truncate??
+    die "Write problem; $cursize != $len";
+  }
+  close F;
+}
+
+sub xml {
+  my ( $self, $obj, $name ) = @_;
+  if( !$name ) {
+    my %hash;
+    $hash{0} = $obj;
+    return XML::Bare::obj2xml( \%hash, '', 0 );
+  }
+  my %hash;
+  $hash{$name} = $obj;
+  return XML::Bare::obj2xml( \%hash, '', 0 );
+}
+
+sub html {
+  my ( $self, $obj, $name ) = @_;
+  my $pre = '';
+  if( $self->{'style'} ) {
+    $pre = "<style type='text/css'>\@import '$self->{'style'}';</style>";
+  }
+  if( !$name ) {
+    my %hash;
+    $hash{0} = $obj;
+    return $pre.obj2html( \%hash, '', 0 );
+  }
+  my %hash;
+  $hash{$name} = $obj;
+  return $pre.obj2html( \%hash, '', 0 );
+}
+
+sub lineinfo {
+  my $self = shift;
+  my $res  = shift;
+  my $line = 1;
+  my $j = 0;
+  for( my $i=0;$i<$res;$i++ ) {
+    my $let = substr( $self->{'text'}, $i, 1 );
+    if( ord($let) == 10 ) {
+      $line++;
+      $j = $i;
+    }
+  }
+  my $part = substr( $self->{'text'}, $res, 10 );
+  $part =~ s/\n//g;
+  $res -= $j;
+  if( $self->{'offset'} ) {
+    my $off = $self->{'offset'};
+    $line += $off;
+    return "$off line $line char $res \"$part\"";
+  }
+  return "line $line char $res \"$part\"";
+}
+
+sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'root'} ); }
+
+package XML::Bare;
+
+sub find_node {
+  my $node = shift;
+  my $name = shift;
+  my %match = @_;
+  return 0 if( ! defined $node );
+  $node = $node->{ $name } or return 0;
+  $node = [ $node ] if( ref( $node ) eq 'HASH' );
+  if( ref( $node ) eq 'ARRAY' ) {
+    for( my $i = 0; $i <= $#$node; $i++ ) {
+      my $one = $node->[ $i ];
+      for my $key ( keys %match ) {
+        my $val = $match{ $key };
+        croak('undefined value in find') unless defined $val;
+        if( $one->{ $key }{'value'} eq $val ) {
+          return $node->[ $i ];
+        }
+      }
+    }
+  }
+  return 0;
+}
+
+sub xget {
+  my $hash = shift;
+  return map $_->{'value'}, @{$hash}{@_};
+}
+
+sub forcearray {
+  my $ref = shift;
+  return [] if( !$ref );
+  return $ref if( ref( $ref ) eq 'ARRAY' );
+  return [ $ref ];
+}
+
+sub merge {
+  # shift in the two array references as well as the field to merge on
+  my ( $a, $b, $id ) = @_;
+  my %hash = map { $_->{ $id } ? ( $_->{ $id }->{ 'value' } => $_ ) : ( 0 => 0 ) } @$a;
+  for my $one ( @$b ) {
+    next if( !$one->{ $id } );
+    my $short = $hash{ $one->{ $id }->{ 'value' } };
+    next if( !$short );
+    foreach my $key ( keys %$one ) {
+      next if( $key eq '_pos' || $key eq 'id' );
+      my $cur = $short->{ $key };
+      my $add = $one->{ $key };
+      if( !$cur ) { $short->{ $key } = $add; }
+      else {
+        my $type = ref( $cur );
+        if( $type eq 'HASH' ) {
+          my @arr;
+          $short->{ $key } = \@arr;
+          push( @arr, $cur );
+        }
+        if( ref( $add ) eq 'HASH' ) {
+          push( @{$short->{ $key }}, $add );
+        }
+        else { # we are merging an array
+          push( @{$short->{ $key }}, @$add );
+        }
+      }
+      # we need to deal with the case where this node
+      # is already there, either alone or as an array
+    }
+  }
+  return $a;  
+}
+
+sub clean {
+  my $ob = new XML::Bare( @_ );
+  my $root = $ob->parse();
+  if( $ob->{'save'} ) {
+    $ob->{'file'} = $ob->{'save'} if( "$ob->{'save'}" ne "1" );
+    $ob->save();
+    return;
+  }
+  return $ob->xml( $root );
+}
+
+sub xmlin {
+  my $text = shift;
+  my %ops = ( @_ );
+  my $ob = new XML::Bare( text => $text );
+  my $simple = $ob->simple();
+  if( !$ops{'keeproot'} ) {
+    my @keys = keys %$simple;
+    my $first = $keys[0];
+    $simple = $simple->{ $first } if( $first );
+  }
+  return $simple;
+}
+
+sub tohtml {
+  my %ops = ( @_ );
+  my $ob = new XML::Bare( %ops );
+  return $ob->html( $ob->parse(), $ops{'root'} || 'xml' );
+}
 
 sub readxbs { # xbs = xml bare schema
   my $node = shift;
@@ -355,111 +547,20 @@ sub readxbs { # xbs = xml bare schema
   if( @demand ) { $node->{'_demand'} = \@demand; }
 }
 
-sub simple {
-  my $self = shift;
-  
-  my $res = XML::Bare::xml2obj_simple( $self->{'root'}, $self->{'curnode'} );#$self->xml2obj();
-  $self->free_tree();
-  
-  if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
-  $self->{ 'xml' } = $res;
-  
-  return $self->{ 'xml' };
-}
-
-sub add_node {
-  my ( $self, $node, $name ) = @_;
-  my @newar;
-  my %blank;
-  $node->{ 'multi_'.$name } = \%blank if( ! $node->{ 'multi_'.$name } );
-  $node->{ $name } = \@newar if( ! $node->{ $name } );
-  my $newnode = new_node( 0, splice( @_, 3 ) );
-  push( @{ $node->{ $name } }, $newnode );
-  return $newnode;
-}
-
-sub add_node_after {
-  my ( $self, $node, $prev, $name ) = @_;
-  my @newar;
-  my %blank;
-  $node->{ 'multi_'.$name } = \%blank if( ! $node->{ 'multi_'.$name } );
-  $node->{ $name } = \@newar if( ! $node->{ $name } );
-  my $newnode = $self->new_node( splice( @_, 4 ) );
-  
-  my $cur = 0;
-  for my $anode ( @{ $node->{ $name } } ) {
-    $anode->{'_pos'} = $cur if( !$anode->{'_pos'} );
-    $cur++;
-  }
-  my $opos = $prev->{'_pos'};
-  for my $anode ( @{ $node->{ $name } } ) {
-    $anode->{'_pos'}++ if( $anode->{'_pos'} > $opos );
-  }
-  $newnode->{'_pos'} = $opos + 1;
-  
-  push( @{ $node->{ $name } }, $newnode );
-  
-  return $newnode;
-}
-
 sub find_by_perl {
   my $arr = shift;
   my $cond = shift;
-  $cond =~ s/-([a-z]+)/\$ob->\{'$1'\}->\{'value'\}/g;
+  
   my @res;
-  foreach my $ob ( @$arr ) { push( @res, $ob ) if( eval( $cond ) ); }
+  if( ref( $arr ) eq 'ARRAY' ) {
+      $cond =~ s/-([a-z_]+)/\$ob->\{'$1'\}->\{'value'\}/gi;
+      foreach my $ob ( @$arr ) { push( @res, $ob ) if( eval( $cond ) ); }
+  }
+  else {
+      $cond =~ s/-([a-z_]+)/\$arr->\{'$1'\}->\{'value'\}/gi;
+      push( @res, $arr ) if( eval( $cond ) );
+  }
   return \@res;
-}
-
-sub find_node {
-  my $self = shift;
-  my $node = shift;
-  my $name = shift;
-  my %match = @_;
-  #croak "Cannot search empty node for $name" if( !$node );
-  #$node = $node->{ $name } or croak "Cannot find $name";
-  $node = $node->{ $name } or return 0;
-  return 0 if( !$node );
-  if( ref( $node ) eq 'HASH' ) {
-    foreach my $key ( keys %match ) {
-      my $val = $match{ $key };
-      next if ( !$val );
-      if( $node->{ $key }->{'value'} eq $val ) {
-        return $node;
-      }
-    }
-  }
-  if( ref( $node ) eq 'ARRAY' ) {
-    for( my $i = 0; $i <= $#$node; $i++ ) {
-      my $one = $node->[ $i ];
-      foreach my $key ( keys %match ) {
-        my $val = $match{ $key };
-        croak('undefined value in find') unless defined $val;
-        if( $one->{ $key }->{'value'} eq $val ) {
-          return $node->[ $i ];
-        }
-      }
-    }
-  }
-  return 0;
-}
-
-sub del_node {
-  my $self = shift;
-  my $node = shift;
-  my $name = shift;
-  my %match = @_;
-  $node = $node->{ $name };
-  return if( !$node );
-  for( my $i = 0; $i <= $#$node; $i++ ) {
-    my $one = $node->[ $i ];
-    foreach my $key ( keys %match ) {
-      my $val = $match{ $key };
-      if( $one->{ $key }->{'value'} eq $val ) {
-        delete $node->[ $i ];
-      }
-    }
-  }
 }
 
 sub del_by_perl {
@@ -475,100 +576,10 @@ sub del_by_perl {
   return \@res;
 }
 
-# Created a node of XML hash with the passed in variables already set
-sub new_node {
-  my $self  = shift;
-  my %parts = @_;
-  
-  my %newnode;
-  foreach( keys %parts ) {
-    my $val = $parts{$_};
-    if( m/^_/ || ref( $val ) eq 'HASH' ) {
-      $newnode{ $_ } = $val;
-    }
-    else {
-      $newnode{ $_ } = { value => $val };
-    }
-  }
-  
-  return \%newnode;
-}
-
 sub newhash { shift; return { value => shift }; }
-
-sub simplify {
-  my $self = shift;
-  my $root = shift;
-  my %ret;
-  foreach my $name ( keys %$root ) {
-    next if( $name =~ m|^_| || $name eq 'comment' || $name eq 'value' );
-    my $val = xval $root->{$name};
-    $ret{ $name } = $val;
-  }
-  return \%ret;
-}
 
 sub xval {
   return $_[0] ? $_[0]->{'value'} : ( $_[1] || '' );
-}
-
-# Save an XML hash tree into a file
-sub save {
-  my $self = shift;
-  return if( ! $self->{ 'xml' } );
-  
-  my $xml = $self->xml( $self->{'xml'} );
-  
-  my $len;
-  {
-    use bytes;  
-    $len = length( $xml );
-  }
-  return if( !$len );
-  
-  open  F, '>:utf8', $self->{ 'file' };
-  print F $xml;
-  
-  seek( F, 0, 2 );
-  my $cursize = tell( F );
-  if( $cursize != $len ) { # concurrency; we are writing a smaller file
-    warn "Truncating File $self->{'file'}";
-    truncate( F, $len );
-  }
-  seek( F, 0, 2 );
-  $cursize = tell( F );
-  if( $cursize != $len ) { # still not the right size even after truncate??
-    die "Write problem; $cursize != $len";
-  }
-  close F;
-}
-
-sub xml {
-  my ( $self, $obj, $name ) = @_;
-  if( !$name ) {
-    my %hash;
-    $hash{0} = $obj;
-    return obj2xml( \%hash, '', 0 );
-  }
-  my %hash;
-  $hash{$name} = $obj;
-  return obj2xml( \%hash, '', 0 );
-}
-
-sub html {
-  my ( $self, $obj, $name ) = @_;
-  my $pre = '';
-  if( $self->{'style'} ) {
-    $pre = "<style type='text/css'>\@import '$self->{'style'}';</style>";
-  }
-  if( !$name ) {
-    my %hash;
-    $hash{0} = $obj;
-    return $pre.obj2html( \%hash, '', 0 );
-  }
-  my %hash;
-  $hash{$name} = $obj;
-  return $pre.obj2html( \%hash, '', 0 );
 }
 
 sub obj2xml {
@@ -778,8 +789,6 @@ sub obj2html {
   }
   return '';
 }
-
-sub free_tree { my $self = shift; XML::Bare::free_tree_c( $self->{'root'} ); }
 
 1;
 

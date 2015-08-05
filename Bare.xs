@@ -14,17 +14,19 @@ U32 ihash;
 U32 cdhash;
 U32 zhash;
 U32 ahash;
+U32 content_hash;
 
 char *rootpos;
   
 SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
-  HV *output = newHV();
-  SV *outputref = newRV_noinc( (SV *) output );
-  int i;
-  struct attc *curatt;
-  int numatts = curnode->numatt;
+  HV *output = newHV(); // the root
+  SV *outputref = newRV_noinc( (SV *) output ); // return a reference to the root
+  int i; // loop index; defined at the top because this is C
+  struct attc *curatt; // current attribute being worked with
+  int numatts = curnode->numatt; // total number of attributes on the current node
   SV *attval;
   SV *attatt;
+  int cur_type;
       
   int length = curnode->numchildren;
   SV *svi = newSViv( curnode->pos );
@@ -32,6 +34,8 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
   hv_store( output, "_pos", 4, svi, phash );
   hv_store( output, "_i", 2, newSViv( curnode->name - rootpos ), ihash );
   hv_store( output, "_z", 2, newSViv( curnode->z ), zhash );
+  
+  // node without children
   if( !length ) {
     if( curnode->vallen ) {
       SV * sv = newSVpvn( curnode->value, curnode->vallen );
@@ -48,6 +52,8 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
       hv_store( output, "comment", 7, sv, chash );
     }
   }
+  
+  // node with children
   else {
     if( curnode->vallen ) {
       SV *sv = newSVpvn( curnode->value, curnode->vallen );
@@ -64,10 +70,12 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
       hv_store( output, "comment", 7, sv, chash );
     }
     
+    // loop through child nodes
     curnode = curnode->firstchild;
     for( i = 0; i < length; i++ ) {
       SV **cur = hv_fetch( output, curnode->name, curnode->namelen, 0 );
       
+      // check for multi_[name] nodes
       if( curnode->namelen > 6 ) {
         if( !strncmp( curnode->name, "multi_", 6 ) ) {
           char *subname = &curnode->name[6];
@@ -93,8 +101,9 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
         SV *ob = cxml2obj( rootnode, curnode );
         hv_store( output, curnode->name, curnode->namelen, ob, 0 );
       }
-      else {
-        if( SvTYPE( SvRV(*cur) ) == SVt_PVHV ) {
+      else { // there is already a node stored with this name
+        cur_type = SvTYPE( SvRV( *cur ) );
+        if( cur_type == SVt_PVHV ) { // sub value is a hash; must be anode
           AV *newarray = newAV();
           SV *newarrayref = newRV_noinc( (SV *) newarray );
           SV *newref = newRV( (SV *) SvRV( *cur ) );
@@ -105,10 +114,15 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
           ob = cxml2obj( rootnode, curnode );
           av_push( newarray, ob );
         }
-        else {
+        else if( cur_type == SVt_PVAV ) {
           AV *av = (AV *) SvRV( *cur );
           SV *ob = cxml2obj( rootnode, curnode );
           av_push( av, ob );
+        }
+        else {
+          // something else; probably an existing value node; just wipe it out
+          SV *ob = cxml2obj( rootnode, curnode );
+          hv_store( output, curnode->name, curnode->namelen, ob, 0 );
         }
       }
       if( i != ( length - 1 ) ) curnode = curnode->next;
@@ -124,7 +138,8 @@ SV *cxml2obj( struct nodec *rootnode, struct nodec *curnode ) {
       SV *atthref = newRV_noinc( (SV *) atth );
       hv_store( output, curatt->name, curatt->namelen, atthref, 0 );
       
-      attval = newSVpvn( curatt->value, curatt->vallen );
+      if( curatt->value == -1 ) attval = newSVpvn( "1", 1 );
+      else attval = newSVpvn( curatt->value, curatt->vallen );
       SvUTF8_on(attval);
       hv_store( atth, "value", 5, attval, vhash );
       attatt = newSViv( 1 );
@@ -151,7 +166,7 @@ SV *cxml2obj_simple( struct nodec *rootnode, struct nodec *curnode ) {
       SvUTF8_on(sv);
       return sv;
     }
-    return newSViv( 1 ); //&PL_sv_undef;
+    return newSVpvn( "", 0 );
   }
   
   output = newHV();
@@ -225,11 +240,34 @@ SV *cxml2obj_simple( struct nodec *rootnode, struct nodec *curnode ) {
     }
     curnode = curnode->parent;
   }
+  else {
+    if( curnode->type ) { // store cdata value under content, even if empty or spaces
+      SV * sv = newSVpvn( curnode->value, curnode->vallen );
+      SvUTF8_on(sv);
+      hv_store( output, "content", 7, sv, content_hash );
+    }
+    else {
+      int hasval = 0;
+      for( i=0;i<curnode->vallen;i++ ) {
+        char let = curnode->value[ i ];
+        if( let != ' ' && let != 0x0d && let != 0x0a ) {
+          hasval = 1;
+          break;
+        }
+      }
+      if( hasval ) {
+        SV * sv = newSVpvn( curnode->value, curnode->vallen );
+        SvUTF8_on(sv);
+        hv_store( output, "content", 7, sv, content_hash );
+      }
+    }
+  }
   
   if( numatts ) {
     curatt = curnode->firstatt;
     for( i = 0; i < numatts; i++ ) {
-      attval = newSVpvn( curatt->value, curatt->vallen );
+      if( curatt->value == -1 ) attval = newSVpvn( "1", 1 );
+      else attval = newSVpvn( curatt->value, curatt->vallen );
       SvUTF8_on(attval);
       hv_store( output, curatt->name, curatt->namelen, attval, 0 );
       if( i != ( numatts - 1 ) ) curatt = curatt->next;
@@ -260,6 +298,7 @@ xml2obj_simple( rootsv, cursv )
   SV *rootsv
   SV *cursv
   CODE:
+    PERL_HASH( content_hash, "content", 7 );
     struct nodec *rootnode;
     rootnode = INT2PTR( struct nodec *, SvUV( rootsv ) );
     struct nodec *curnode;
