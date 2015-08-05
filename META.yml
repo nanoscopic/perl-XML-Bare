@@ -1,7 +1,7 @@
 --- #YAML:1.0
 name:                XML-Bare
-version:             0.40
-abstract:            A minimal XML parser that uses C to generate a folded perl hash.
+version:             0.42
+abstract:            A minimal XML parser / schema checker / pretty-printer using C internally.
 license:             perl
 author:              
     - David Helkowski <cpan@codechild.com>

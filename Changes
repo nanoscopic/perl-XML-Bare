@@ -1,5 +1,16 @@
 XML::Bare Changelog
 
+0.42
+  - A number of memory leaks have been fixed
+  - XML files included for benchmarking have been replaced with dummy test
+    data to avoid licensing problems.
+
+0.41
+  - Perl code has been optimized
+  - Fixed problem with merge function
+  - Added tohtml output
+  - Added flag to indicate node read in as CDATA
+
 0.40
   - Added schema checking functionality
   - Fixed parsing of nodes with more than one comment block
