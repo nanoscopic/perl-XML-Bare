@@ -30,4 +30,5 @@ t/Bug_simple_empty_is_one.t
 t/Bug_simple_with_cdata.t
 t/Func_find_by_perl.t
 t/Func_find_node.t
+t/Multithreading.t
 META.json                                Module JSON meta-data (added by MakeMaker)

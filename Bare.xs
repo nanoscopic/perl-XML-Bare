@@ -302,7 +302,10 @@ xml2obj( parsersv )
     struct parserc *parser;
     parser = INT2PTR( struct parserc *, SvUV( parsersv ) );
     if( parser->err ) RETVAL = newSViv( parser->err );
-    else RETVAL = cxml2obj( parser, parser->rootnode );
+    else {
+      RETVAL = cxml2obj( parser, parser->rootnode );
+      //printf("refcnt: %i\n", SvREFCNT( RETVAL ) );
+    }
   OUTPUT:
     RETVAL
     
@@ -314,7 +317,10 @@ xml2obj_simple( parsersv )
     struct parserc *parser;
     parser = INT2PTR( struct parserc *, SvUV( parsersv ) );
     if( parser->err ) RETVAL = newSViv( parser->err );
-    else RETVAL = cxml2obj_simple( parser, parser->rootnode );
+    else {
+      RETVAL = cxml2obj_simple( parser, parser->rootnode );
+      //printf("refcnt: %i\n", SvREFCNT( RETVAL ) );
+    }
   OUTPUT:
     RETVAL
 

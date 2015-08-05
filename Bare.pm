@@ -7,7 +7,7 @@ use utf8;
 require Exporter;
 require DynaLoader;
 @ISA = qw(Exporter DynaLoader);
-$VERSION = "0.51";
+$VERSION = "0.52";
 use vars qw($VERSION *AUTOLOAD);
 
 *AUTOLOAD = \&XML::Bare::AUTOLOAD;
@@ -22,7 +22,7 @@ XML::Bare - Minimal XML parser implemented via a C state engine
 
 =head1 VERSION
 
-0.51
+0.52
 
 =cut
 
@@ -52,7 +52,7 @@ sub new {
     close( $XML );
     $self->{'parser'} = XML::Bare::c_parse( $self->{'text'} );
   }
-  bless $self, 'XML::Bare::Object';
+  bless $self, "XML::Bare::Object";
   return $self if( !wantarray );
   return ( $self, ( $self->{'simple'} ? $self->simple() : $self->parse() ) );
 }
@@ -72,8 +72,12 @@ sub find_node { shift; return XML::Bare::find_node( @_ ); }
 
 sub DESTROY {
   my $self = shift;
-  undef $self->{'xml'};
+  use Data::Dumper;
+  #print Dumper( $self );
+  undef $self->{'text'};
+  undef $self->{'i'};
   $self->free_tree();
+  undef $self->{'parser'};
 }
 
 sub read_more {
@@ -101,7 +105,7 @@ sub parse {
     readxbs( $ob );
   }
   
-  if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
+  if( !ref( $res ) && $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
   $self->{ 'xml' } = $res;
   
   if( defined( $self->{'xbso'} ) ) {
@@ -199,10 +203,10 @@ sub simple {
   
   my $res = XML::Bare::xml2obj_simple( $self->{'parser'} );#$self->xml2obj();
   
-  if( $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
+  if( !ref( $res ) && $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
   $self->{ 'xml' } = $res;
   
-  return $self->{ 'xml' };
+  return $res;
 }
 
 sub add_node {
@@ -303,13 +307,29 @@ sub save {
   }
   return if( !$len );
   
-  open( my $F, '>:utf8', $self->{ 'file' } );
+  # This is intentionally just :utf8 and not :encoding(UTF-8)
+  # :encoding(UTF-8) checks the data for actually being valid UTF-8, and doing so would slow down the file write
+  # See http://perldoc.perl.org/functions/binmode.html
+  
+  my $os = $^O;
+  my $F;
+  
+  # Note on the following conditional OS check... WTF? This is total bullshit.
+  if( $os eq 'MSWin32' ) {
+      open( $F, '>:utf8', $self->{ 'file' } );
+      binmode $F;
+  }
+  else {
+      open( $F, '>', $self->{ 'file' } );
+      binmode $F, ':utf8';
+  }
   print $F $xml;
   
   seek( $F, 0, 2 );
   my $cursize = tell( $F );
   if( $cursize != $len ) { # concurrency; we are writing a smaller file
     warn "Truncating File $self->{'file'}";
+    `cp $self->{'file'} $self->{'file'}.bad`;
     truncate( F, $len );
   }
   seek( $F, 0, 2 );

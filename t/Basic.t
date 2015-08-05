@@ -71,7 +71,7 @@ my $z = $root->{'xml'}{'node'}{'_z'}-$i+1;
 #is( substr( $text, $i, $z ), '<node>checkval</node>', '_i and _z vals' );
 
 # saving test
-( $xml, $root ) = new XML::Bare( file => 't/test.xml' );
+( $xml, $root ) = XML::Bare->new( file => 't/test.xml' );
 $xml->save();
 
 sub reparse {

@@ -34,7 +34,7 @@ foreach ( keys %{$data} ) {
 $xmldata .= "</data>\n";
 
 # parse the provided XML
-my $obj = new XML::Bare( text => $xmldata );
+my $obj = new XML::Bare( text => $xmldata, file => 't/test_utf8.xml' );
 my $root = $obj->parse;
 
 # convert back to XML from parse
@@ -53,3 +53,11 @@ while ( my ( $name, $char ) = each %{$data} ) {
 
     is( $str, $char, "Character $name OK" );
 }
+
+# save it to a file
+$obj->save();
+
+my ( $ob2, $root2 ) = XML::Bare->new( file => 't/test_utf8.xml' );
+my $round2 = $obj->xml( $root2 );
+
+is( $roundtrip, $xmldata, 'Written file reads back in the same' );

@@ -1,5 +1,11 @@
 XML::Bare Changelog
 
+0.52 ( 4-29-13 )
+  - Added proper binmode setting when outputting XML to address deficiences on Win32 ( such as failing Strawberry perl due to line endings )
+  - Added evil OS check in file writing code to address differences in how files must be opened to write utf8 on win32 versus linux/cygwin.
+  - Added note regarding using utf8 flag instead of using encoding(utf8)
+  - Altered UTF8 test to also write XML containing UTF8 to a file.
+  
 0.51 ( 4-28-13 )
   - New 'unsafe' parsing mode, giving a 30% speed increase with some downfalls
   - New 'read_more' function, allowing more data to be read in before parsing into a tree
