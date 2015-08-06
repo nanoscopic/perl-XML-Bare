@@ -15,6 +15,7 @@ U32 cdhash;
 U32 zhash;
 U32 ahash;
 U32 content_hash;
+U32 blankhash;
 
 char *rootpos;
 
@@ -144,7 +145,11 @@ SV *cxml2obj( struct parserc *parser, struct nodec *curnode ) {
       SV *atthref = newRV_noinc( (SV *) atth );
       hv_store( output, curatt->name, curatt->namelen, atthref, 0 );
       
-      if( curatt->value == -1 ) attval = newSVpvn( "1", 1 );
+      if( curatt->value == -1 ) {
+        attval = newSViv( 1 );
+        hv_store( atth, "_blank", 6, attval, blankhash );
+        attval = newSVpvn( "1", 1 );
+      }
       else attval = newSVpvn( curatt->value, curatt->vallen );
       SvUTF8_on(attval);
       hv_store( atth, "value", 5, attval, vhash );
@@ -291,6 +296,7 @@ void init_hashes() {
   PERL_HASH(ihash, "_i", 2 );
   PERL_HASH(zhash, "_z", 2 );
   PERL_HASH(cdhash, "_cdata", 6 );
+  PERL_HASH(blankhash, "_blank", 6 );
 }
 
 MODULE = XML::Bare         PACKAGE = XML::Bare
@@ -343,6 +349,7 @@ c_parse(text)
     
     struct parserc *parser = (struct parserc *) malloc( sizeof( struct parserc ) );
     parser->last_state = 0;
+    rootpos = text;
     int err = parserc_parse( parser, text );
     RETVAL = newSVuv( PTR2UV( parser ) );
   OUTPUT:
