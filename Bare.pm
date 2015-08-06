@@ -120,22 +120,22 @@ sub parse {
 
 # xml bare schema
 sub check {
-  my ( $self, $node, $scheme, $parent ) = @_;
+  my ( $self, $node, $scheme, $parent, $up ) = @_;
   
   my $fail = '';
   if( ref( $scheme ) eq 'ARRAY' ) {
     for my $one ( @$scheme ) {
-      my $res = $self->checkone( $node, $one, $parent );
+      my $res = $self->checkone( $node, $one, $parent, $up );
       return 0 if( !$res );
       $fail .= "$res\n";
     }
   }
-  else { return $self->checkone( $node, $scheme, $parent ); }
+  else { return $self->checkone( $node, $scheme, $parent, $up ); }
   return $fail;
 }
 
 sub checkone {
-  my ( $self, $node, $scheme, $parent ) = @_;
+  my ( $self, $node, $scheme, $parent, $up ) = @_;
   
   for my $key ( keys %$node ) {
     next if( substr( $key, 0, 1 ) eq '_' || $key eq '_att' || $key eq 'comment' );
@@ -143,9 +143,9 @@ sub checkone {
       my $val = $node->{ 'value' };
       my $regexp = $scheme->{'value'};
       if( $regexp ) {
-        if( $val !~ m/^($regexp)$/ ) {   
-          my $linfo = $self->lineinfo( $node->{'_i'} );
-          return "Value of '$parent' node ($val) does not match /$regexp/ [$linfo]";
+        if( $val !~ m/^($regexp)$/ ) {
+          my $linfo = $self->lineinfo( $up->{'_i'} );
+          return "Value of '$parent' attribute ($val) does not match /$regexp/ [$linfo]";
         }
       }
       next;
@@ -173,7 +173,7 @@ sub checkone {
       return "Invalid node '$key' in xml [$linfo]";
     }
     if( ref( $sub ) eq 'HASH' ) {
-      my $res = $self->check( $sub, $ssub, $key );
+      my $res = $self->check( $sub, $ssub, $key, $node );
       return $res if( $res );
     }
     if( ref( $sub ) eq 'ARRAY' ) {
@@ -194,7 +194,7 @@ sub checkone {
         }
       }
       for( @$sub ) {
-        my $res = $self->check( $_, $ssub, $key );
+        my $res = $self->check( $_, $ssub, $key, $node );
         return $res if( $res );
       }
     }
@@ -567,7 +567,13 @@ sub readxbs { # xbs = xml bare schema
     next if( substr( $key, 0, 1 ) eq '_' || $key eq 'comment' );
     push( @keys, $key );
   }
-  @keys = sort { $node->{$a}{'_pos'} <=> $node->{$b}{'_pos'} } @keys;
+  @keys = sort {
+    my $a1 = $node->{ $a };
+    my $b1 = $node->{ $b };
+    $a1 = $a1->[0] if( ref( $a1 ) eq 'ARRAY' );
+    $b1 = $b1->[0] if( ref( $b1 ) eq 'ARRAY' );
+    ($a1->{'_pos'}||0) <=> ($b1->{'_pos'}||0);
+  } @keys;
   
   for my $key ( @keys ) {
     my $sub = $node->{ $key };
@@ -684,7 +690,7 @@ sub readxbs { # xbs = xml bare schema
       }
     }
   }
-  if( $hasval ) {
+  if( $hasval && defined $node->{'value'} ) {
     my $val = $node->{'value'};
     delete $node->{'value'} if( $val =~ m/^\W*$/ );
   }
