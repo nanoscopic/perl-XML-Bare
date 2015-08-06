@@ -96,14 +96,14 @@ sub parse {
   
   my $res = XML::Bare::xml2obj( $self->{'parser'} );
   
-  if( defined( $self->{'scheme'} ) ) {
-    $self->{'xbs'} = new XML::Bare( %{ $self->{'scheme'} } );
+  if( defined( $self->{'schema'} ) ) {
+    $self->{'xbs'} = new XML::Bare( %{ $self->{'schema'} } );
   }
   if( defined( $self->{'xbs'} ) ) {
     my $xbs = $self->{'xbs'};
     my $ob = $xbs->parse();
     $self->{'xbso'} = $ob;
-    readxbs( $ob );
+    XML::Bare::readxbs( $ob, [$ob] );
   }
   
   if( !ref( $res ) && $res < 0 ) { croak "Error at ".$self->lineinfo( -$res ); }
@@ -152,6 +152,22 @@ sub checkone {
     }
     my $sub = $node->{ $key };
     my $ssub = $scheme->{ $key };
+    if( $scheme->{'_match'} ) {
+      my @found;
+      my $tomatch = $scheme->{'_match'};
+      for my $option ( @$tomatch ) {
+        my $expr = $option->{'_expr'};
+        if( $key =~ m/^($expr)$/ ) {
+          push( @found, $option );
+        }
+      }
+      if( @found ) {
+        if( $ssub ) {
+          push( @found, $ssub );
+        }
+        $ssub = \@found;
+      }
+    }
     if( !$ssub ) { #&& ref( $schemesub ) ne 'HASH'
       my $linfo = $self->lineinfo( $sub->{'_i'} );
       return "Invalid node '$key' in xml [$linfo]";
@@ -538,84 +554,156 @@ sub tohtml {
 }
 
 sub readxbs { # xbs = xml bare schema
-  my $node = shift;
+  my ( $node, $stack ) = @_;
   my @demand;
+  my @tomatch;
+  
+  # Get and sort keys by the order they were present in the XML
+  # This is important to be able to properly reference things
+  my @keys;
+  my $hasval = 0;
   for my $key ( keys %$node ) {
-    next if( substr( $key, 0, 1 ) eq '_' || $key eq '_att' || $key eq 'comment' );
-    if( $key eq 'value' ) {
-      my $val = $node->{'value'};
-      delete $node->{'value'} if( $val =~ m/^\W*$/ );
-      next;
-    }
+    if( $key eq 'value' ) { $hasval = 1; next; }
+    next if( substr( $key, 0, 1 ) eq '_' || $key eq 'comment' );
+    push( @keys, $key );
+  }
+  @keys = sort { $node->{$a}{'_pos'} <=> $node->{$b}{'_pos'} } @keys;
+  
+  for my $key ( @keys ) {
     my $sub = $node->{ $key };
+    my @substack = ( @$stack, $sub );
     
-    if( $key =~ m/([a-z_]+)([^a-z_]+)/ ) {
+    my $t;
+    my $min;
+    my $max;
+    
+    # options specifying node count
+    if( $key =~ m/^([a-z_]+)([^a-z_]+)/ ) {
       my $name = $1;
-      my $t = $2;
-      my $min;
-      my $max;
-      if( $t eq '+' ) {
-        $min = 1;
-        $max = 1000;
-      }
-      elsif( $t eq '*' ) {
-        $min = 0;
-        $max = 1000;
-      }
-      elsif( $t eq '?' ) {
-        $min = 0;
-        $max = 1;
-      }
-      elsif( $t eq '@' ) {
-        $name = 'multi_'.$name;
-        $min = 1;
-        $max = 1;
-      }
-      elsif( $t =~ m/\{([0-9]+),([0-9]+)\}/ ) {
-        $min = $1;
-        $max = $2;
-        $t = 'r'; # range
-      }
-      
-      if( ref( $sub ) eq 'HASH' ) {
-        my $res = readxbs( $sub );
-        $sub->{'_t'} = $t;
-        $sub->{'_min'} = $min;
-        $sub->{'_max'} = $max;
-      }
-      if( ref( $sub ) eq 'ARRAY' ) {
-        for my $item ( @$sub ) {
-          my $res = readxbs( $item );
-          $item->{'_t'} = $t;
-          $item->{'_min'} = $min;
-          $item->{'_max'} = $max;
-        }
-      }
+      $t = $2;
+      ( $min, $max, $t ) = process_t( $t );
       
       push( @demand, $name ) if( $min );
       $node->{$name} = $node->{$key};
       delete $node->{$key};
     }
-    else {
+    # regular expression against node name
+    elsif( $key =~ m/^\~(.+)/ ) {
+      my $expr = $1;
+      $node->{'_match'} ||= \@tomatch;
       if( ref( $sub ) eq 'HASH' ) {
-        readxbs( $sub );
-        $sub->{'_t'} = 'r';
-        $sub->{'_min'} = 1;
-        $sub->{'_max'} = 1;
+        $sub->{'_expr'} = $expr;
+        push( @tomatch, $sub );
       }
       if( ref( $sub ) eq 'ARRAY' ) {
         for my $item ( @$sub ) {
-          readxbs( $item );
-          $item->{'_t'} = 'r';
-          $item->{'_min'} = 1;
-          $item->{'_max'} = 1;
+          $item->{'_expr'} = $expr;
+          push( @tomatch, $item );
+        }
+      }
+    }
+    # reference to a node somewhere else in the tree
+    elsif( $key =~ m/\&(.+)/ ) {
+      my $path = $1;
+      my $refto;
+      
+      if( $path =~ m/^\.\.([a-z0-9_].*)/ ) { # ascend one level
+        $refto = splice @$stack, -2, 1;
+        $path = $1;
+      }
+      elsif( $path =~ m/^\.([a-z0-9_].*)/ ) { # from current node
+        $refto = $node;
+        $path = $1;
+      }
+      elsif( $path =~ m/^([a-z0-9_].*)/ ) { # from tree root
+        $refto = $stack->[0];
+      }
+      
+      my @arr = split('\.',$path);
+      delete( $node->{ $key } );
+      $key = pop @arr;
+      
+      for my $name ( @arr ) {
+        $refto = $refto->{ $name };
+        if( ref( $refto ) eq 'ARRAY' ) { die "Not yet supported"; }
+      }
+      
+      # You can override the count specification when referencing
+      if( $key =~ m/^([a-z_]+)([^a-z_]+)/ ) {
+        $key = $1;
+        $t = $2;
+        ( $min, $max, $t ) = process_t( $t );
+        
+        push( @demand, $key ) if( $min );
+      }
+      $refto = $refto->{ $key };
+      
+      my $clone = { %$refto };# make a shallow copy
+      for my $key ( keys %$sub ) {
+        if( $key =~ m/^-(.+)/ ) {
+          my $delkey = $1;
+          delete $clone->{ $delkey };
+        }
+        else {
+          $clone->{ $key } = $sub->{ $key };
         }
       }
       
+      $sub = $node->{$key} = $clone;
+      if( !$sub->{'_xbsdone'} ) { # no expression may have been matched at that level yet
+        die "problem";
+      }
+      $min = $sub->{'_min'} if( ! defined $min );
+      push( @demand, $key ) if( $min );
+    }
+    else {
+      $t = 'r';
+      $min = 1;
+      $max = 1;
       push( @demand, $key );
     }
+    
+    if( ref( $sub ) eq 'HASH' ) { 
+      $sub->{'_xbsdone'} = 1;
+      if( $t ) {
+        $sub->{'_t'} = $t;
+        $sub->{'_min'} = $min;
+        $sub->{'_max'} = $max;
+      }
+      readxbs( $sub, \@substack );
+    }
+    elsif( ref( $sub ) eq 'ARRAY' ) {
+      for my $item ( @$sub ) {
+        $item->{'_xbsdone'} = 1;
+        if( $t ) {
+          $item->{'_t'} = $t;
+          $item->{'_min'} = $min;
+          $item->{'_max'} = $max;
+        }
+        readxbs( $item, \@substack );
+      }
+    }
   }
+  if( $hasval ) {
+    my $val = $node->{'value'};
+    delete $node->{'value'} if( $val =~ m/^\W*$/ );
+  }
+  
   if( @demand ) { $node->{'_demand'} = \@demand; }
+}
+
+sub process_t {
+  my $t = shift;
+  my ( $min, $max );
+  if(    $t eq '+' ) { $min = 1; $max = 1000; }
+  elsif( $t eq '*' ) { $min = 0; $max = 1000; }
+  elsif( $t eq '?' ) { $min = 0; $max = 1;    }
+  elsif( $t =~ m/\{([0-9]+),([0-9]+)\}/ ) {
+    $min = $1;
+    $max = $2;
+    $t = 'r'; # range
+  }
+  return ( $min, $max, $t );
 }
 
 sub find_by_perl {
