@@ -143,7 +143,32 @@ SV *cxml2obj( struct parserc *parser, struct nodec *curnode ) {
     for( i = 0; i < numatts; i++ ) {
       HV *atth = newHV();
       SV *atthref = newRV_noinc( (SV *) atth );
-      hv_store( output, curatt->name, curatt->namelen, atthref, 0 );
+      
+      SV **cur = hv_fetch( output, curatt->name, curatt->namelen, 0 );
+      if( !cur ) {
+        hv_store( output, curatt->name, curatt->namelen, atthref, 0 );
+      }
+      else {
+        cur_type = SvTYPE( SvRV( *cur ) );
+        if( cur_type == SVt_PVHV ) { // sub value is a hash; must be anode
+          AV *newarray = newAV();
+          SV *newarrayref = newRV_noinc( (SV *) newarray );
+          SV *newref = newRV( (SV *) SvRV( *cur ) );
+          SV *ob;
+          //hv_delete( output, curatt->name, curatt->namelen, 0 );
+          hv_store( output, curatt->name, curatt->namelen, newarrayref, 0 );
+          av_push( newarray, newref );
+          av_push( newarray, atthref );
+        }
+        else if( cur_type == SVt_PVAV ) {
+          AV *av = (AV *) SvRV( *cur );
+          av_push( av, atthref );
+        }
+        else {
+          // something else; probably an existing value node; just wipe it out
+          hv_store( output, curatt->name, curatt->namelen, atthref, 0 );
+        }
+      }
       
       if( curatt->value == -1 ) {
         attval = newSViv( 1 );
@@ -280,7 +305,43 @@ SV *cxml2obj_simple( struct parserc *parser, struct nodec *curnode ) {
       if( curatt->value == -1 ) attval = newSVpvn( "1", 1 );
       else attval = newSVpvn( curatt->value, curatt->vallen );
       SvUTF8_on(attval);
-      hv_store( output, curatt->name, curatt->namelen, attval, 0 );
+      
+      SV **cur = hv_fetch( output, curatt->name, curatt->namelen, 0 );
+      if( !cur ) {
+        hv_store( output, curatt->name, curatt->namelen, attval, 0 );
+      }
+      else {
+        if( SvROK( *cur ) ) {
+          if( SvTYPE( SvRV(*cur) ) == SVt_PVHV ) {
+            AV *newarray = newAV();
+            SV *newarrayref = newRV_noinc( (SV *) newarray );
+            SV *newref = newRV( (SV *) SvRV( *cur ) );
+            //hv_delete( output, curnode->name, curnode->namelen, 0 );
+            hv_store( output, curatt->name, curatt->namelen, newarrayref, 0 );
+            av_push( newarray, newref );
+            av_push( newarray, attval );
+          }
+          else {
+            AV *av = (AV *) SvRV( *cur );
+            av_push( av, attval );
+          }
+        }
+        else {
+          AV *newarray = newAV();
+          SV *newarrayref = newRV( (SV *) newarray );
+          
+          STRLEN len;
+          char *ptr = SvPV(*cur, len);
+          SV *newsv = newSVpvn( ptr, len );
+          SvUTF8_on(newsv);
+          
+          av_push( newarray, newsv );
+          //hv_delete( output, curnode->name, curnode->namelen, 0 );
+          hv_store( output, curatt->name, curatt->namelen, newarrayref, 0 );
+          av_push( newarray, attval );
+        }
+      }
+      
       if( i != ( numatts - 1 ) ) curatt = curatt->next;
     }
   }

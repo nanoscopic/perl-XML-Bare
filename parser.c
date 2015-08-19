@@ -93,6 +93,7 @@ struct attc* new_attc( struct nodec *newparent ) {
 #define ST_att_tick 21
 #define ST_ename_1 22
 #define ST_ename_x 23
+#define ST_att_array 25
 
 int parserc_parse( struct parserc *self, char *xmlin ) {
     // Variables that represent current 'state'
@@ -150,6 +151,7 @@ int parserc_parse( struct parserc *self, char *xmlin ) {
         case ST_att_tick: goto att_tick;
         case ST_ename_1: goto ename_1;
         case ST_ename_x: goto ename_x;
+        case ST_att_array: goto att_array;
       }
     }
     else {
@@ -502,6 +504,7 @@ int parserc_parse( struct parserc *self, char *xmlin ) {
         case '"':  cpos++; goto att_quot;
         case 0x27: cpos++; goto att_quots; //'
         case '`':  cpos++; goto att_tick;
+        case '[':  cpos++; goto att_array;
         case '>':  cpos++; goto val_1;
         case ' ':  cpos++; goto att_eq1;
       }  
@@ -544,7 +547,31 @@ int parserc_parse( struct parserc *self, char *xmlin ) {
       attval_len++;
       cpos++;
       goto att_eqx;
+    
+    att_array:
+      let = *cpos;
       
+      if( let == ',' ) {
+        curatt->value = attval;
+        curatt->vallen = attval_len;
+        attval_len = 0;
+        curatt = nodec_addattr( curnode, curatt->name, curatt->namelen );
+        cpos++;
+        goto att_array;
+      }
+      else if( let == ']' ) {
+        curatt->value = attval;
+        curatt->vallen = attval_len;
+        attval_len = 0;
+        cpos++;
+        goto name_gap;
+      }
+      if( !let ) { last_state = ST_att_array; goto done; }
+      if( !attval_len ) attval = cpos;
+      attval_len++;
+      cpos++;
+      goto att_array;
+    
     att_quot:
       let = *cpos;
       

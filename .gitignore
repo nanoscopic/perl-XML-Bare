@@ -1,0 +1,16 @@
+Bare.bs
+Bare.c
+Bare.o
+MYMETA.json
+MYMETA.yml
+Makefile
+Makefile.old
+bench/exe.pl
+bench/notree.pl
+bench/oneexe.pl
+bench/onenotree.pl
+bench/onetree.pl
+bench/tree.pl
+blib/
+parser.o
+pm_to_blib
