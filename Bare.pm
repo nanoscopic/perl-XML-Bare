@@ -15,7 +15,7 @@ use vars qw($VERSION *AUTOLOAD);
 bootstrap XML::Bare $VERSION;
 
 @EXPORT = qw( );
-@EXPORT_OK = qw( xget merge clean add_node del_node find_node del_node forcearray del_by_perl xmlin xval unmix );
+@EXPORT_OK = qw( xget merge clean add_node del_node find_node del_node forcearray del_by_perl xmlin xval unmix simplify complicate );
 
 =head1 NAME
 
@@ -70,6 +70,8 @@ use strict;
 # Stubs ( to allow these functions to be used via an object as well, not just via import or namespace )
 sub find_by_perl { shift; return XML::Bare::find_by_perl( @_ ); }
 sub find_node { shift; return XML::Bare::find_node( @_ ); }
+sub simplify { shift; return XML::Bare::simplify( @_ ); }
+sub complicate { shift; return XML::Bare::complicate( @_ ); }
 
 sub DESTROY {
   my $self = shift;
@@ -296,32 +298,6 @@ sub new_node {
   }
   
   return \%newnode;
-}
-
-sub simplify {
-    my $node = CORE::shift;
-    my $ref = ref( $node );
-    if( $ref eq 'ARRAY' ) {
-        my @ret;
-        for my $sub ( @$node ) {
-            CORE::push( @ret, simplify( $sub ) );
-        }
-        return \@ret;
-    }
-    if( $ref eq 'HASH' ) {
-        my %ret;
-        my $cnt = 0;
-        for my $key ( keys %$node ) {
-            next if( $key eq 'comment' || $key eq 'value' || $key =~ m/^_/ );
-            $cnt++;
-            $ret{ $key } = simplify( $node->{ $key } );
-        }
-        if( $cnt == 0 ) {
-            return $node->{'value'};
-        }
-        return \%ret;
-    }
-    return $node;
 }
 
 sub hash2xml {
@@ -978,6 +954,65 @@ sub unmix {
     #print Dumper( \@arr );
     my @res = sort { $a->{'node'}{'_pos'} <=> $b->{'node'}{'_pos'} } @arr;
     return \@res;
+}
+
+sub simplify {
+    my $node = CORE::shift;
+    my $ref = ref( $node );
+    if( $ref eq 'ARRAY' ) {
+        my @ret;
+        for my $sub ( @$node ) {
+            CORE::push( @ret, simplify( $sub ) );
+        }
+        return \@ret;
+    }
+    if( $ref eq 'HASH' ) {
+        my %ret;
+        my $cnt = 0;
+        for my $key ( keys %$node ) {
+            next if( $key eq 'comment' || $key eq 'value' || $key =~ m/^_/ );
+            $cnt++;
+            $ret{ $key } = simplify( $node->{ $key } );
+        }
+        if( $cnt == 0 ) {
+            return $node->{'value'};
+        }
+        return \%ret;
+    }
+    return $node;
+}
+
+# Do the reverse of the simplify function
+sub complicate {
+    my $node = shift;
+    my $ref = ref( $node );
+    if( $ref eq 'HASH' )  {
+        for my $key ( keys %$node ) {
+            my $replace = complicate( $node->{ $key } );
+            #if( $key =~ m/^$att_prefix(.+)/ ) {
+            if( $key =~ m/^\_(.+)/ ) {
+                my $newkey = $1;
+                delete $node->{ $key };
+                $replace->{'_att'} = 1;
+                $node->{ $newkey } = $replace;
+            }
+            else {
+                $node->{ $key } = $replace if( $replace );
+            }
+        }
+        return 0;
+    }
+    
+    if( $ref eq 'ARRAY' ) {
+        my $len = scalar @$node;
+        for( my $i=0;$i<$len;$i++ ) {
+            my $replace = complicate( $node->[ $i ] );
+            $node->[ $i ] = $replace if( $replace );
+        }
+        return 0;
+    }
+    
+    return { value => $node };
 }
 
 1;
