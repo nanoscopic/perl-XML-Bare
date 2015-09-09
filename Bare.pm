@@ -952,7 +952,7 @@ sub unmix {
         }
     }
     #print Dumper( \@arr );
-    my @res = sort { $a->{'node'}{'_pos'} <=> $b->{'node'}{'_pos'} } @arr;
+    my @res = sort { ($a->{'node'}{'_pos'}||0) <=> ($b->{'node'}{'_pos'}||0) } @arr;
     return \@res;
 }
 
