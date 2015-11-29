@@ -43,6 +43,9 @@ elsif( $^O eq 'darwin' ) {
 elsif( $^O eq 'solaris' ) {
   gen_solaris();
 }
+elsif( $^O eq 'cygwin' ) {
+  gen_cygwin();
+}
 else {
   gen_cc(); # all others
 }
@@ -66,6 +69,14 @@ sub gen_msvc {
 }
 sub gen_cc {
   WriteMakefile( @basics,
+    LIBS      => ['-lm'],
+    OBJECT    => 'Bare.o parser.o',
+    LDDLFLAGS => '-shared -L/usr/local/lib',
+  );
+}
+sub gen_cygwin {
+  WriteMakefile( @basics,
+    CCFLAGS   => "-fno-stack-protector -O2",
     LIBS      => ['-lm'],
     OBJECT    => 'Bare.o parser.o',
     LDDLFLAGS => '-shared -L/usr/local/lib',
